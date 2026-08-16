@@ -31,9 +31,9 @@ from academic_paper.db import (
 from academic_paper.embedder import EmbedderClient
 from academic_paper.extractor import extract_text, hash_file
 from academic_paper.hybrid import rrf_merge
-from academic_paper.nugget import extract_nuggets
 from academic_paper.jobs import job_store
 from academic_paper.llm import get_llm_client
+from academic_paper.nugget import extract_nuggets, split_sentences
 from academic_paper.scorer import compute_score
 from academic_paper.summarizer import RAGSummarizer
 from academic_paper.telemetry import get_tracer, setup_telemetry
@@ -414,6 +414,13 @@ async def search(
     limit: int = Query(10, ge=1, le=100),
     paper_id: int | None = Query(None),
     nuggets_per_chunk: int = Query(3, ge=1, le=10, description="Sentences per chunk (nugget mode only)"),
+    nugget_embed_weight: float = Query(
+        0.7,
+        ge=0.0,
+        le=1.0,
+        description="Embedding weight in nugget hybrid scoring: 0=BM25-only, 1=embed-only "
+        "(nugget mode only; nugget-rag-eval #11 found 0.7 optimal)",
+    ),
 ):
     """Search papers using vector, keyword, hybrid, or nugget mode.
 
@@ -496,7 +503,20 @@ async def search(
                 row = cursor.fetchone()
                 full_text = result["text"]
                 if mode == "nugget":
-                    snippet = extract_nuggets(q, full_text, top_k=nuggets_per_chunk)
+                    sentence_vecs = None
+                    if nugget_embed_weight > 0.0:
+                        sentences = split_sentences(full_text)
+                        if sentences:
+                            with tracer.start_as_current_span("embed.nuggets"):
+                                sentence_vecs = await app.state.embedder.embed(sentences, mode="search")
+                    snippet = extract_nuggets(
+                        q,
+                        full_text,
+                        top_k=nuggets_per_chunk,
+                        embed_weight=nugget_embed_weight,
+                        query_vec=query_vector,
+                        sentence_vecs=sentence_vecs,
+                    )
                 else:
                     snippet = full_text[:200]
                 results.append({
