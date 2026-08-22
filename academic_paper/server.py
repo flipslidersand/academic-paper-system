@@ -1,11 +1,14 @@
 """FastAPI server for academic paper ingestion and retrieval."""
 
 import json
+import logging
 import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -175,6 +178,7 @@ async def ingest_paper(
             }
 
         except Exception as e:
+            logger.exception("Embedding or Qdrant error for paper_id=%s", paper_id)
             update_paper_status(conn, paper_id, "failed")
             conn.close()
             raise HTTPException(status_code=400, detail=f"Embedding or Qdrant error: {str(e)}")
@@ -182,6 +186,7 @@ async def ingest_paper(
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Unexpected error during paper ingest")
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -274,6 +279,7 @@ async def get_summary_endpoint(paper_id: int, force: bool = Query(False)):
         }
 
     except Exception as e:
+        logger.exception("Summarization error for paper_id=%s", paper_id)
         conn.close()
         raise HTTPException(status_code=400, detail=f"Summarization error: {str(e)}")
 
@@ -367,11 +373,13 @@ async def _run_summarize_all(job_id: str) -> None:
                 conn.close()
                 job.processed += 1
             except Exception as e:
+                logger.exception("Background summarize failed for paper_id=%s", paper_id)
                 job.failed += 1
                 job.errors.append(f"paper_id={paper_id}: {e}")
 
         job.status = "done"
     except Exception as e:
+        logger.exception("Background summarize-all job=%s failed", job_id)
         job.status = "failed"
         job.errors.append(str(e))
     finally:
@@ -531,6 +539,7 @@ async def search(
             return {"mode": mode, "query": q, "results": results}
 
     except Exception as e:
+        logger.exception("Search error for query=%r mode=%s", q, mode)
         raise HTTPException(status_code=400, detail=f"Search error: {str(e)}")
 
 
