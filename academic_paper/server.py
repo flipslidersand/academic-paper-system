@@ -8,8 +8,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-logger = logging.getLogger(__name__)
-
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.staticfiles import StaticFiles
@@ -42,6 +40,7 @@ from academic_paper.summarizer import RAGSummarizer
 from academic_paper.telemetry import get_tracer, setup_telemetry
 from academic_paper.vector_store import QdrantStore, make_qdrant_id
 
+logger = logging.getLogger(__name__)
 tracer = get_tracer()
 
 
